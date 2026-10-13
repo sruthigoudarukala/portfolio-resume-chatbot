@@ -2,10 +2,10 @@
 
 A personal portfolio website with a chatbot that answers questions about me using only the facts in my resume. The front end was generated with Google AI Studio (Build mode). The back end is a RAG service built in Google Colab with NVIDIA Nemotron models, FAISS and LangChain, and every question is traced in LangSmith.
 
-**Links** (fill in before submitting)
-- Colab notebook (view access): [paste link]
-- Front end code: [GitHub repo link or ZIP name]
-- Live site (optional): [paste link]
+**Links** 
+- Colab notebook:(https://colab.research.google.com/drive/1Rk1r-nsKrZAIAa5htiOcisXA6M6FnXPn#scrollTo=ncLpjg7qJlN2)
+- Front end code:(https://github.com/sruthigoudarukala/portfolio-resume-chatbot)
+- Live site:(https://aistudio.google.com/apps/a77dc847-d8d5-4edf-bddd-6a090d846f8b?showAssistant=true&appParams=experience&showCode=true
 
 > The chatbot calls a temporary Cloudflare quick tunnel. The URL in `BACKEND_URL` stops working when the Colab session ends, so it must be updated to the current tunnel URL for the demo.
 
@@ -57,7 +57,6 @@ The chat answers come from Nemotron through the Colab back end. The Gemini API i
 
 ## 3. Prompts used in Google AI Studio
 
-**Starter prompt** (customised): [paste the starter prompt you submitted first]
 
 **Follow-up prompts**
 
