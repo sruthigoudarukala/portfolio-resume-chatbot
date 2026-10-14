@@ -1,0 +1,21 @@
+chat,question,input_tokens,output_tokens
+t1,What is your return policy?,1134,127
+t2,How long is the warranty?,1140,136
+t3,Do you offer free shipping?,1122,150
+t4,How many days do I have to return a product?,1138,142
+t5,Is there a warranty on electronics?,1132,154
+t6,How long does delivery take?,1120,198
+t7,Where is my order TN1001?,1130,103
+t8,What is the status of order TN1002?,1133,100
+t9,Has order TN1003 been delivered?,1121,104
+t10,Check order TN1001 please,1130,120
+t11,When will TN1002 arrive?,1142,151
+t12,What is the status of order TN9999?,1123,112
+t13,Where is my order TN1001?,1130,103
+t13,What was the item in that order?,641,91
+t14,What is your return policy?,1134,132
+t14,And what about the warranty?,1273,73
+t15,What is the weather today?,515,99
+t16,Tell me a joke,513,118
+t17,Who won the cricket match yesterday?,516,107
+t18,Write me a poem about the moon,516,118
