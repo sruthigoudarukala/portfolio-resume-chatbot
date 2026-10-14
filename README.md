@@ -1,137 +1,201 @@
-# AI-Powered Portfolio with a Resume Chatbot
+# TechNova Support Bot: Build and Observe a Production-Ready Chatbot
 
-A personal portfolio website with a chatbot that answers questions about me using only the facts in my resume. The front end was generated with Google AI Studio (Build mode). The back end is a RAG service built in Google Colab with NVIDIA Nemotron models, FAISS and LangChain, and every question is traced in LangSmith.
+A customer-support chatbot for a fictional electronics store, **TechNova**. It answers policy questions, looks up orders, remembers the conversation, and never shows a Python error to the customer. The bot is built with **LangGraph** and an **NVIDIA-hosted LLM**, and every call is traced in **LangSmith**, where I measured latency, tokens and cost, triggered failures on purpose, and evaluated answer quality.
 
-**Links** 
-- Colab notebook:(https://colab.research.google.com/drive/1Rk1r-nsKrZAIAa5htiOcisXA6M6FnXPn#scrollTo=ncLpjg7qJlN2)
-- Front end code:(https://github.com/sruthigoudarukala/portfolio-resume-chatbot)
-- Live site:(https://aistudio.google.com/apps/a77dc847-d8d5-4edf-bddd-6a090d846f8b?showAssistant=true&appParams=experience&showCode=true
-
-> The chatbot calls a temporary Cloudflare quick tunnel. The URL in `BACKEND_URL` stops working when the Colab session ends, so it must be updated to the current tunnel URL for the demo.
+- LangSmith project: `technova-bot-sruthi`
+- Evaluation dataset: `technova-eval-sruthi`
+- Colab notebook (where everything was first built and run): *add your Colab link here*
+- Mode: individual assignment
 
 ---
 
 ## 1. Architecture
 
 ```
-Visitor types a question in the portfolio chat widget (AI Studio app)
+User types a question (command-line chat loop)
         |
-        v   POST /chat  {"question": "...", "session_id": "..."}
-Colab FastAPI service (public HTTPS URL via cloudflared quick tunnel)
-        |
-        |-- 1. Embed the question          NVIDIAEmbeddings (Nemotron embedding model)
-        |-- 2. Search the vector DB        FAISS, top chunks from resume.md, about.md, projects.md
-        |-- 3. Build a grounded prompt     retrieved chunks + question
-        |-- 4. Generate the answer         nvidia/nemotron-3.5-lightning-30b-a3b via ChatNVIDIA
-        |-- 5. Trace every step            LangSmith (project: portfolio-bot-sruthi)
         v
-JSON reply {"answer": "...", "sources": [...]}  ->  shown in the chat widget
+ask_bot  ->  clean_input                  our own traced steps (extra spaces removed)
+        |
+        v
++------------------- LangGraph bot --------------------+
+|                                                       |
+|   START -> agent -> (asked for a tool?) -> tools      |
+|              ^                              |         |
+|              +------ tool result -----------+         |
+|              |                                        |
+|              v  no tool needed                        |
+|            final answer                               |
+|                                                       |
+|   Memory: MemorySaver, one saved chat per thread_id   |
++-------------------------------------------------------+
+        |                              |
+        v                              v
+NVIDIA model (ChatNVIDIA)        Mock TechNova data
+ small: openai/gpt-oss-20b        ORDERS, POLICIES
+ large: nvidia/nemotron-3-super-120b-a12b
+
+Every step is recorded in LangSmith: traces, tags, metadata, tokens, errors, evaluations.
 ```
 
 | Layer | Tool |
-| --- | --- |
-| Front end | Google AI Studio (Build mode), React, Tailwind CSS |
-| Back end | Google Colab, FastAPI, CORS enabled |
-| Embeddings | NVIDIA Nemotron embeddings via `NVIDIAEmbeddings` |
-| Vector database | FAISS (index saved to disk) |
-| LLM | `nvidia/nemotron-3.5-lightning-30b-a3b` via `ChatNVIDIA` (max 300 output tokens, temperature 0) |
-| Framework | LangChain (`langchain-nvidia-ai-endpoints`) |
-| Observability | LangSmith |
-| Public link | cloudflared quick tunnel |
+|---|---|
+| Conversation flow | LangGraph (`StateGraph`, `ToolNode`, `tools_condition`) |
+| Model | `ChatNVIDIA` from `langchain-nvidia-ai-endpoints`, temperature 0 |
+| Tools | `get_order_status`, `get_policy` (`@tool`) |
+| Memory | `MemorySaver` checkpointer, `thread_id` per conversation |
+| Observability | LangSmith (tags, metadata, `@traceable`, datasets, experiments, feedback) |
+| Data / tables | pandas |
 
-The chat answers come from Nemotron through the Colab back end. The Gemini API is not used for chat.
-
----
-
-## 2. Setup steps
-
-1. **Keys.** In Colab, open the Secrets panel and add `NVIDIA_API_KEY` and `LANGSMITH_API_KEY`. Keys are never written in code cells. Run the keys cell first, before importing LangChain.
-2. **Knowledge base.** Create `resume.md`, `about.md` and `projects.md` from the privacy-safe portfolio copy of the resume (no phone number or home address).
-3. **Index.** Load the files with `TextLoader`, split with `RecursiveCharacterTextSplitter`, embed with `NVIDIAEmbeddings`, store in FAISS and save the index to disk.
-4. **RAG chain.** Build retriever, prompt, `ChatNVIDIA` and output parser. Each call uses `run_name="portfolio_chat"`, with tags and metadata (`source` and a session ID).
-5. **API.** Wrap the chain in FastAPI with `POST /chat`, enable CORS, run the server in Colab and start a cloudflared quick tunnel.
-6. **Front end.** Open the project in Google AI Studio, set `BACKEND_URL` in `src/components/ChatWidget.tsx` to the tunnel URL, and export the ZIP or push to GitHub.
-7. **Each new session.** A restarted tunnel gets a new URL. Run the tunnel cell, copy the new `PUBLIC URL` and update `BACKEND_URL`.
+**Models.** The assignment suggested Llama 8B and 70B, but NVIDIA had retired them (the API answers `410 Gone` even though they are still listed). I tested the models in the catalogue and used the two that worked:
+small = `openai/gpt-oss-20b`, large = `nvidia/nemotron-3-super-120b-a12b`.
 
 ---
 
-## 3. Prompts used in Google AI Studio
+## 2. Setup and how to run
 
+Run all commands from the repository root.
 
-**Follow-up prompts**
+```bash
+python -m venv .venv
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
-1. Certifications section:
-```
-Add a Certifications section between Experience and Contact, in the same
-dark theme and accent colour, with a "Certifications" navbar link. Show one
-small card: "Data Science Training (in progress)", Innomatics Research Labs,
-2025 to present. Do not change ChatWidget.tsx or BACKEND_URL.
-```
-
-2. Replace the generated placeholder content with the details from my real resume (name, summary, grouped skills without percentages, the two projects, training, teaching experience and education), and remove the sections that were not in my resume. The prompt also said not to change `ChatWidget.tsx` or `BACKEND_URL`.
-
-3. Update the tunnel address:
-```
-In src/components/ChatWidget.tsx, change only the value of BACKEND_URL to:
-"<current tunnel URL>"
-Do not change anything else in the file, and do not change any other file.
+cp .env.example .env                 # Windows: copy .env.example .env
+# open .env and paste your own keys (NVIDIA_API_KEY, LANGSMITH_API_KEY)
 ```
 
-4. Text cleanup:
-```
-In the chat widget header, change the subtitle to "AI assistant · Data science & ML projects".
-Change the widget's opening message to: "Hello! I am Sruthi Arukala's portfolio assistant. Ask me about her education, teaching experience, data science training, skills or machine learning projects."
-Do not change BACKEND_URL, the fetch call, or any other logic.
-```
+Keys: NVIDIA at build.nvidia.com (starts with `nvapi-`), LangSmith at smith.langchain.com, Settings, API Keys (starts with `lsv2_`). The real `.env` is in `.gitignore` and must never be committed.
+
+| What | Command |
+|---|---|
+| Chat with the bot (Part A) | `python -m app.chat` |
+| Latency: 20 questions, both models (Part C) | `python -m experiments.latency` |
+| Latency plus time to first word | `python -m experiments.latency --ttft` |
+| Tokens and cost, 10-turn growth, trimming (Part D) | `python -m experiments.tokens` |
+| One failure scenario (Part E) | `python -m experiments.faults --fault bad_model` |
+| All five failure scenarios | `python -m experiments.faults --all` |
+| Error rate over 20 requests | `python -m experiments.faults --rate` |
+| Dataset, AI judge, experiments, feedback (Part F) | `python -m experiments.evaluate` |
+
+Valid values for `--fault` (or the `FAULT_MODE` environment variable): `bad_model`, `bad_key`, `timeout`, `tool_failure`, `bad_input`.
+
+Notes
+- Every benchmark pauses 2 to 3 seconds between questions. NVIDIA's free endpoint answered `429 Too Many Requests` when I went faster.
+- Scripts write their CSV files into `results/` and overwrite what is there. The files already in `results/` were built from the numbers of my Colab runs, so running a script again gives slightly different numbers (the models and the server vary from run to run).
+- Each script takes a few minutes, because of the pauses and the model calls.
+- Part F needs the large model as the judge, so it uses your NVIDIA credits.
 
 ---
 
-## 4. Test results (10 questions asked from the website)
+## 3. Results
 
-All questions were asked from the website, and each appears in LangSmith with the tag `source=website`. Questions 8 and 9 must be refused. Question 10 is a made-up-fact check that failed first and was fixed (see section 5).
+### Latency (20 questions, one run per model)
 
-| # | Question | Answer | Correct | Latency | Input tokens | Output tokens | Total tokens |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Where did Sruthi study? | JNTUH, M.Tech and B.Tech | Y | 1.10s | 580 | 38 | 618 |
-| 2 | What projects has Sruthi built? | SMS Spam Classifier API, House Price Prediction App | Y | 11.39s | 583 | 32 | 615 |
-| 3 | Does Sruthi know Python? | Yes, she knows Python | Y | 0.58s | 516 | 7 | 523 |
-| 4 | What is Sruthi's teaching experience? | Assistant Professor 2019 to 2021, Cultural Head, workshop | Y | 1.96s | 582 | 58 | 640 |
-| 5 | Which tools does Sruthi use for deployment? | Streamlit, Vercel | Y | 1.01s | 586 | 6 | 592 |
-| 6 | What is Sruthi currently learning? | ML and deep learning at Innomatics | Y | 21.71s | 581 | 20 | 601 |
-| 7 | What role is Sruthi looking for? | Entry-level Data Scientist or Data Analyst | Y | 1.00s | 582 | 19 | 601 |
-| 8 | What is Sruthi's salary? | Refused | Y | 1.07s | 581 | 11 | 592 |
-| 9 | What is the capital of France? | Refused | Y | 0.88s | 515 | 11 | 526 |
-| 10a | Does Sruthi know Azure? (before fix) | "No, she doesn't have Azure listed" | N | 7.15s | 580 | 13 | 593 |
-| 10b | Does Sruthi know Azure (after fix) | Refused | Y | 1.05s | 636 | 11 | 647 |
+| Model | Average | p50 | p95 | Answer quality (1 to 5, my judgement) |
+|---|---|---|---|---|
+| Small (gpt-oss-20b) | 2.25 s | 1.66 s | 4.96 s | 4 |
+| Large (nemotron-120b) | 1.70 s | 1.45 s | 2.77 s | 4 |
 
-Notes:
-- Retrieval took about 0.4s in every run, so the two slow answers (21.71s and 11.39s) came from the hosted model, not from retrieval.
-- Input tokens dominate (about 515 to 586) because every request carries the system prompt and the retrieved chunks. Output is only 6 to 58 tokens.
-- An extra check, "Does Sruthi work at PS Associates", was correctly rejected, which confirmed the old placeholder data was gone from the index.
+![latency](results/latency_comparison.png)
+
+- **Which step is slowest?** In the slowest run (6.08 s) the model call took 6.07 s. My own code and the routing took about 0 s.
+- **Time to first word (5 questions, small model):** the first word appeared at 2.10 s on average and the whole answer at 2.61 s. Streaming does not shorten the total time, but the user sees text about half a second earlier, so it feels faster.
+
+### Tokens and cost (20 questions, assumed rate card: small $0.20, large $0.90 per 1M tokens)
+
+| Model | Total tokens | Cost, 20 questions | Cost per month (10,000 chats a day) |
+|---|---|---|---|
+| Small | 14,248 | $0.0028 | about $47 |
+| Large | 22,241 | $0.0200 | about $334 |
+
+The monthly numbers use short test chats, so real chats would cost more.
+
+**10-turn chat.** The input per turn grows because the whole history is sent again on every call. Using `trim_messages` (keep the last 6 messages) the input tokens fell from 11,600 to 6,324 (about 45% less).
+
+![token growth](results/token_growth.png)
+
+### Error handling (Part E)
+
+| Scenario | Fix | What the user sees |
+|---|---|---|
+| Wrong model name | `.with_fallbacks([backup])` | The backup model answers normally |
+| Wrong API key | Fail fast, one attempt, no retry | "Our assistant is not set up correctly right now..." |
+| Slow or failed call | `.with_retry(stop_after_attempt=3, wait_exponential_jitter=True)` | The answer after retries, or "taking longer than usual" |
+| Tool failure | The error goes back to the model | An apology: the order system is temporarily unavailable |
+| Bad input (empty, too long) | Checked before the model is called | Guidance, and no tokens are used |
+
+**Error rate:** 6 errors in 20 requests = **30%**. This is high on purpose, because 6 of the 20 requests were broken deliberately (2 bad input, 1 bad key, 1 timeout, 1 tool failure, 1 bad model). The 14 normal requests had 0 errors.
+
+### Evaluation (Part F)
+
+| Experiment | Correctness (PASS rate) |
+|---|---|
+| small-v2 (gpt-oss-20b) | 0.8 |
+| large-v2 (nemotron-120b) | 0.8 |
+
+10 questions with reference answers, marked by an LLM judge (PASS or FAIL). The two models tie. With only 10 questions I cannot separate them, and the judge itself made mistakes (for example one blank verdict), so the marks need a human spot-check. 5 benchmark runs received a thumbs-up rating (`user_rating = 1`).
+
+### Screenshots (folder `results/screenshots/`)
+- `run_tree_clean_input.png`: run tree with my own traced `clean_input` step
+- `thread_view.png`: runs grouped into one Thread
+- `slowest_run_tree.png`: the slowest run, the model call takes almost all the time
+- `dataset_examples.png`: the evaluation dataset in LangSmith
+- `fault_bad_key_failed.png`: failed run for the wrong API key (403 Forbidden), one attempt and no retry
+- `fault_tool_failure_fixed.png`: after the tool-failure fix, another order (TN1001) still works
+- `error_rate_langsmith.png`: the error counter in LangSmith (`error_event` rows, tag `error`)
+- `eval_comparison.png`: the two evaluation experiments compared (small-v2 and large-v2)
 
 ---
 
-## 5. Task 4: one bad answer, diagnosed and fixed
+## 4. Problems found, diagnosed and fixed
 
-**Problem.** For "Does Sruthi know Azure?" the bot answered "No, she doesn't have Azure listed in her skills."
+**1. The bot invented a return label and a free replacement.** In the first chat test the bot promised things that are not in the store data. The system prompt said "never guess", which was not strict enough. I added rules: only state facts that come from the tools, and say that it cannot send emails or start returns. Then a second problem appeared: the bot asked for the order ID again after I had given it. I added "read the whole conversation before asking for an ID". Every prompt change needs to be tested again.
 
-**Diagnosis from the trace.** Retrieval worked: the context sent to the model contained the Skills section, and Azure appears nowhere in it. The system prompt already said to reply "I don't have that information in my profile" when the context lacks the answer, but the model treated "not listed" as proof that I lack the skill. A resume cannot show that someone does not know something, so the plain "No" is an unsupported claim.
+**2. Fake fast times in the first large-model benchmark.** Two questions "took 0.1 s". They were `429 Too Many Requests` errors that my code still timed. I added a pause between questions and an error count, re-ran, and only used the run with `Errors: 0`.
 
-**Fix.** I added a rule to the system prompt: never answer yes or no to whether I know or have used something unless the context states it directly, and reply with the standard refusal instead.
+**3. The first AI judge gave scores of 0.3 and 0.5.** The judge answered with the digits 1 or 0 and my code read the last 1 or 0 in the reply, but order IDs such as `TN1001` contain those digits. Most of the marked-wrong answers were actually correct. I switched the judge to the words PASS and FAIL, gave it clearer rules, and print every verdict so a human can check. The invalid first scores are kept in `results/evaluation_scores.csv` for honesty.
 
-**Result.** The same question now returns "I don't have that information in my profile." A control question, "Does Sruthi know Python?", still gets a yes. The extra rule adds about 56 input tokens per request (580 to 636).
-
-Screenshots (folder `screenshots/`):
-- Before: `before1.png` (question and wrong answer), `before2.png` (system prompt and context), `before3.png` (model and settings)
-- After: `after1.png` (question and refusal), `after2.png` (prompt with the added rule), `after3.png` (token usage)
-- Full trace tree and run list: `trace1.png`, `runlist1.png`
+**4. Trimming saved tokens but lost memory.** With only the last 6 messages kept, the question "What was the first order I asked about?" was answered with the wrong order (TN1003 instead of TN1001). Fewer tokens means the bot forgets older messages. A safer setting keeps more messages (not tested).
 
 ---
 
-## 6. Lessons learned
+## 5. Lessons learned
 
-1. **A grounded prompt needs an explicit rule for "not mentioned".** Telling the model to use only the context was not enough. It still turned a missing skill into a "No". Yes/no questions about skills need their own instruction to refuse.
-2. **Free tunnels change address.** Every restart of the cloudflared tunnel gives a new URL and the website shows "offline" until `BACKEND_URL` is updated. Finish testing in one session and do not restart the tunnel while recording the demo.
-3. **Check what the generator wrote.** Google AI Studio filled the first version of the site with invented skill percentages, certifications and job details, and its first chat greeting still referred to them. Every line of generated content has to be checked against the real resume, and the chat widget text has to match the knowledge base.
-4. **Hosted models can be slow or time out.** Most answers took about a second, but some took over 10 seconds and one call timed out at 60 seconds. Limiting output tokens and setting a timeout with retries keeps the chat usable.
+1. **Being listed does not mean working.** NVIDIA's model list still shows retired models. Always test a model before building on it.
+2. **A confident bot can still make things up.** A strict rulebook plus testing is needed, and every change to the rulebook must be tested again.
+3. **Check measurements before trusting them.** Failed requests can look like very fast ones.
+4. **Long chats cost more.** The history is sent again on every call, so tokens grow every turn. Trimming helps but loses old memory.
+5. **Handle each failure on purpose.** A wrong key should fail fast, a timeout should retry with backoff, a tool error should go back to the model, and bad input should be stopped before it costs money.
+6. **An AI judge needs a human spot-check.**
+7. **Keys stay out of code, chats and GitHub.** Keep them in `.env` or hidden prompts only.
 
+---
+
+## 6. Repository structure
+
+```
+technova-bot/
+|-- README.md
+|-- .env.example          placeholder keys only
+|-- .gitignore
+|-- requirements.txt
+|-- app/
+|   |-- tools.py          Part A: the two tools and the mock data
+|   |-- graph.py          Parts A and B: the LangGraph bot, memory, tags, traced helpers
+|   |-- chat.py           Part A: command-line chat loop
+|-- experiments/
+|   |-- common.py         the 20 test questions, rate card, helpers
+|   |-- latency.py        Part C
+|   |-- tokens.py         Part D
+|   |-- faults.py         Part E
+|   |-- evaluate.py       Part F
+|-- results/              CSV files, charts and screenshots
+|-- report.pdf            Part G
+```
+
+## 7. Limits of this work
+- Each latency number comes from a single run per model, so small differences are noise.
+- The evaluation has only 10 questions and an AI judge that can be wrong.
+- The cost rates are the assumed rates from the assignment, not real prices.
+- Bonus items (chat UI, dashboard and alerts, guardrail node) were not done.
